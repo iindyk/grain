@@ -5,45 +5,6 @@ set -e -x
 OUTPUT_DIR="${OUTPUT_DIR:-/tmp/grain}"
 PYENV_ROOT="${PYENV_ROOT:-$HOME/.pyenv}"
 
-# Builds Grain from source code located in SOURCE_DIR producing wheels under
-# $SOURCE_DIR/all_dist.
-build_and_test_grain_linux() {
-  SOURCE_DIR="$1"
-
-  # Automatically decide which platform to build for by checking on which
-  # platform this runs.
-  AUDITWHEEL_PLATFORM='manylinux2014_'"$(uname -m)"
-
-  # Using a previous version of Blaze to avoid:
-  # https://github.com/bazelbuild/bazel/issues/8622
-  export BAZEL_VERSION='5.4.0'
-
-  # Build wheels for multiple Python minor versions.
-  PYTHON_MAJOR_VERSION=3
-  for PYTHON_MINOR_VERSION in 10 11 12
-  do
-    PYTHON_VERSION=$PYTHON_MAJOR_VERSION$PYTHON_MINOR_VERSION
-    docker rmi -f grain:${PYTHON_VERSION}
-    docker rm -f grain
-    DOCKER_BUILDKIT=1 docker build --progress=plain --no-cache \
-      --build-arg AUDITWHEEL_PLATFORM="${AUDITWHEEL_PLATFORM}" \
-      --build-arg PYTHON_VERSION="${PYTHON_VERSION}" \
-      --build-arg BAZEL_VERSION="${BAZEL_VERSION}" \
-      -t grain:"${PYTHON_VERSION}" "${SOURCE_DIR}"'/grain/oss'
-
-    docker run --rm -a stdin -a stdout -a stderr \
-      --env PYTHON_VERSION="${PYTHON_MAJOR_VERSION}"'.'"${PYTHON_MINOR_VERSION}" \
-      --env PYTHON_MAJOR_VERSION="${PYTHON_MAJOR_VERSION}" \
-      --env PYTHON_MINOR_VERSION="${PYTHON_MINOR_VERSION}" \
-      --env BAZEL_VERSION="${BAZEL_VERSION}" \
-      --env AUDITWHEEL_PLATFORM="${AUDITWHEEL_PLATFORM}" \
-      -v "${SOURCE_DIR}":"${OUTPUT_DIR}" \
-      --name grain grain:"${PYTHON_VERSION}" \
-      sh grain/oss/build_whl.sh
-  done
-
-  ls "${SOURCE_DIR}"'/all_dist/'*.whl
-}
 
 install_and_init_pyenv() {
   pyenv_root="${1:-$HOME/.pyenv}"
@@ -107,31 +68,6 @@ install_grain_deps() {
     jaxlib \
     tensorflow \
     tensorflow-datasets;
-}
-
-build_and_test_grain_macos() {
-  SOURCE_DIR="$1"
-  # Set up Bazel only if not set up for Array Record build.
-  if [ ! -n "${BUILD_ARRAY_RECORD}" ]; then
-    # Using a previous version of Bazel to avoid:
-    # https://github.com/bazelbuild/bazel/issues/8622
-    export BAZEL_VERSION='5.4.0'
-    update_bazel_macos "${BAZEL_VERSION}"
-    bazel --version
-  fi
-
-  PYTHON_MAJOR_VERSION=3
-  for PYTHON_MINOR_VERSION in 10 11 12
-  do
-    # Set up Pyenv.
-    PYTHON_VERSION="${PYTHON_MAJOR_VERSION}"'.'"${PYTHON_MINOR_VERSION}"
-    printf 'Creating Grain wheel for Python Version %s\n' "$PYTHON_VERSION"
-    setup_env_vars_py "$PYTHON_MAJOR_VERSION" "$PYTHON_MINOR_VERSION"
-    install_and_init_pyenv "${PYENV_ROOT}"
-    install_grain_deps
-
-    sh "${SOURCE_DIR}/grain/oss/build_whl.sh"
-  done
 }
 
 build_and_test_grain() {
