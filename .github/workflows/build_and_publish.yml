@@ -22,7 +22,8 @@ jobs:
       - uses: "actions/checkout@v3"
       - name: Create directory
         run: |
-          mkdir -p ./dist
+          mkdir -p /tmp/grain
+          cp -r . /tmp/grain
       - name: Build package
         run: |
           set -xe
@@ -30,12 +31,12 @@ jobs:
           export PYTHON_MAJOR_VERSION=$(echo $PYTHON_VERSION | cut -d. -f1)
           export PYTHON_MINOR_VERSION=$(echo $PYTHON_VERSION | cut -d. -f2)
           export BAZEL_VERSION="5.4.0"
-          export OUTPUT_DIR="./dist"
-          export SOURCE_DIR="."
+          export OUTPUT_DIR="/tmp/grain"
+          export SOURCE_DIR="/tmp/grain"
           source ${SOURCE_DIR}/grain/oss/runner_common.sh
           build_and_test_grain()
       - name: Upload Grain artifacts
         uses: actions/upload-artifact@v3
         with:
           name: built-grain-wheels-${{ matrix.os }}-${{ matrix.python-version }}
-          path: ./dist/**/*.whl
+          path: /tmp/grain/**/*.whl
