@@ -39,4 +39,4 @@ jobs:
         uses: actions/upload-artifact@v3
         with:
           name: built-grain-wheels-${{ matrix.os }}-${{ matrix.python-version }}
-          path: /tmp/grain/**/*.whl
+          path: /tmp/grain/all_dist/**/*.whl
