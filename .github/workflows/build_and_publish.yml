@@ -33,7 +33,7 @@ jobs:
           export BAZEL_VERSION="5.4.0"
           export OUTPUT_DIR="/tmp/grain"
           export SOURCE_DIR="/tmp/grain"
-          source ${SOURCE_DIR}/grain/oss/runner_common.sh
+          . "${SOURCE_DIR}"'/grain/oss/runner_common.sh'
           build_and_test_grain()
       - name: Upload Grain artifacts
         uses: actions/upload-artifact@v3
