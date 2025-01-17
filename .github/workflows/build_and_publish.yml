@@ -34,7 +34,7 @@ jobs:
           export OUTPUT_DIR="/tmp/grain"
           export SOURCE_DIR="/tmp/grain"
           . "${SOURCE_DIR}"'/grain/oss/runner_common.sh'
-          build_and_test_grain()
+          build_and_test_grain
       - name: Upload Grain artifacts
         uses: actions/upload-artifact@v3
         with:
