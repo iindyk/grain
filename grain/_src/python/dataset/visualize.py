@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import contextlib
+import inspect
 import pprint
 from typing import Any, Callable, Generator, TypeVar
 
@@ -38,6 +39,18 @@ _EDGE_TEMPLATE = r"""{input_spec}
 """
 
 
+def _function_repr(fn: Callable[..., Any]) -> str:
+  """Produces a human-readable string representation of a function."""
+  fn_name = fn.__name__
+  if inspect.ismethod(fn):
+    # Function is defined as a method in a class. Prepend the class name.
+    class_name = fn.__self__.__class__.__name__
+    fn_name = f'{class_name}.{fn_name}'
+  fn_module = inspect.getmodule(fn).__name__
+  _, line_number = inspect.getsourcelines(fn)
+  return f'{fn_name} in module {fn_module} on line {line_number}'
+
+
 # TODO: Move this to the specific transformations' `__repr__`. Note that
 # in that case it could also be used for checkpoint validation and will become
 # available to users.
@@ -55,9 +68,9 @@ def _dataset_repr(ds: dataset.MapDataset | dataset.IterDataset) -> str:
           map_dataset.MapIterDataset,
       ),
   ):
-    result += f'<map_fn={ds._map_fn.__name__}>'
+    result += f'<map_fn={_function_repr(ds._map_fn)}>'
   elif isinstance(ds, filter_dataset.FilterMapDataset):
-    result += f'<filter_fn={ds._filter_fn.__name__}>'
+    result += f'<filter_fn={_function_repr(ds._filter_fn)}>'
   # pylint: enable=protected-access
   # Display the number of parents for datasets with multiple parents.
   if (num_parents := len(ds.parents)) > 1:
@@ -161,20 +174,20 @@ class _SpecTrackingDatasetIterator(dataset.DatasetIterator[T]):
       mock_output: Value to use as the output of the parent iterator. If None,
         the actual iterator output will be used.
     """
-    self._parent_iter = parent_iter
+    super().__init__(parent_iter)
     self._spec_update_fn = spec_update_fn
     self._mock_output = mock_output
 
   def __next__(self) -> T:
-    result = self._mock_output or self._parent_iter.__next__()
+    result = self._mock_output or self._parent.__next__()
     self._spec_update_fn(tree.spec_like(result))
     return result
 
   def set_state(self, state: dict[str, Any]) -> None:
-    self._parent_iter.set_state(state)
+    self._parent.set_state(state)
 
   def get_state(self) -> dict[str, Any]:
-    return self._parent_iter.get_state()
+    return self._parent.get_state()
 
 
 def _build_visualization_from_tracked_spec(

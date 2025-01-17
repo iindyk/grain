@@ -19,7 +19,6 @@ import abc
 from collections.abc import Sequence
 import contextlib
 import dataclasses
-import enum
 import pprint
 import sys
 import threading
@@ -31,6 +30,7 @@ from absl import logging
 from grain._src.core import config as grain_config
 from grain._src.core import monitoring as grain_monitoring
 from grain._src.core import tree
+from grain._src.python.dataset import base
 
 from grain._src.core import monitoring
 
@@ -68,6 +68,7 @@ _EDGE_TEMPLATE = r"""{input_spec}
 _AVG_PROCESSING_TIME_COLUMN_NAME = "avg processing time"
 
 _COLUMN_NAME_OVERRIDES = types.MappingProxyType({
+    "wait_time_ratio": "percent wait time",
     "min_processing_time_ns": "min processing time",
     "max_processing_time_ns": "max processing time",
     "total_processing_time_ns": "total processing time",
@@ -77,6 +78,10 @@ _COLUMN_NAME_OVERRIDES = types.MappingProxyType({
 
 _MAX_COLUMN_WIDTH = 30
 _MAX_ROW_LINES = 5
+
+
+def _format_ratio_as_percent(value: float) -> str:
+  return f"{value*100:.2f}%"
 
 
 def _pretty_format_ns(value: int) -> str:
@@ -104,6 +109,89 @@ def _get_avg_processing_time_ns(
   )
 
 
+def _get_nodes_before_prefetch(
+    node: int, summary: execution_summary_pb2.ExecutionSummary
+) -> list[int]:
+  """Returns nodes in the path from a given node to a prefetch node."""
+  child_nodes = []
+  nodes_to_visit = [node]
+  while nodes_to_visit:
+    node_id = nodes_to_visit.pop()
+    node = summary.nodes[node_id]
+    child_nodes.append(node_id)
+    if node.is_prefetch:
+      continue  # Skip adding inputs for the prefetch node
+    nodes_to_visit.extend(node.inputs)
+  return child_nodes
+
+
+def _find_aggregated_processing_time(
+    summary: execution_summary_pb2.ExecutionSummary,
+    node_ids: list[int],
+) -> int:
+  """Finds aggregated processing time for the given node IDs."""
+  return sum(
+      summary.nodes[node_id].total_processing_time_ns for node_id in node_ids
+  )
+
+
+def _compute_wait_time_ratio(
+    summary: execution_summary_pb2.ExecutionSummary,
+    node_id: int,
+    aggregated_wait_time_ns: int,
+    prefetch_factor: int = 1,
+) -> None:
+  """Computes the wait time ratio for all the nodes in the execution summary.
+
+  Args:
+    summary: The execution summary to update the `wait_time_ratio` for.
+    node_id: The current node for which to compute the `wait_time_ratio`.
+    aggregated_wait_time_ns: The aggregated wait time of the nodes running under
+      prefetch.
+    prefetch_factor: The factor by which to multiply the `total_processing_time`
+      of the node to get it's wait time ratio.
+  """
+  if aggregated_wait_time_ns == 0:
+    return
+  node = summary.nodes[node_id]
+  node_wait_ratio = prefetch_factor * (
+      node.total_processing_time_ns / aggregated_wait_time_ns
+  )
+  node.wait_time_ratio = round(node_wait_ratio, 4)
+  for input_node_id in node.inputs:
+    # If the node is executed in multiple threads, the iterator's wait time
+    # ratio attributed to the prefetch node is distributed among these nodes
+    # proportionally to their total processing time.
+    if node.is_prefetch:
+      prefetch_factor = node.wait_time_ratio
+      prefetch_child_nodes = _get_nodes_before_prefetch(input_node_id, summary)
+      aggregated_wait_time_ns = _find_aggregated_processing_time(
+          summary, prefetch_child_nodes
+      )
+      # The `wait_time_ratio` of the prefetch node is sum of `wait_time_ratio`
+      # of all the nodes running under it. Here we set it to 0 as it is already
+      # accounted for in the ancestor nodes and sum of `wait_time_ratio` of all
+      # the nodes in a pipeline should be 1.
+      node.wait_time_ratio = 0
+    _compute_wait_time_ratio(
+        summary,
+        input_node_id,
+        aggregated_wait_time_ns,
+        prefetch_factor,
+    )
+
+
+def _populate_wait_time_ratio(
+    summary: execution_summary_pb2.ExecutionSummary,
+) -> None:
+  """Populates the `wait_time_ratio` for all the nodes in the execution summary."""
+  iterator_nodes = _get_nodes_before_prefetch(0, summary)
+  aggregated_wait_time_ns = _find_aggregated_processing_time(
+      summary, iterator_nodes
+  )
+  _compute_wait_time_ratio(summary, 0, aggregated_wait_time_ns)
+
+
 def _pretty_format_summary(
     summary: execution_summary_pb2.ExecutionSummary,
 ) -> str:
@@ -114,6 +202,7 @@ def _pretty_format_summary(
   # the visualization graph.
   col_names.remove("output_spec")
   col_names.remove("is_output")
+  col_names.remove("is_prefetch")
   # Insert the average processing time column after the max processing time
   # column.
   index = col_names.index("max_processing_time_ns")
@@ -137,16 +226,23 @@ def _pretty_format_summary(
 
   for node_id in sorted(summary.nodes, reverse=True):
     row_values = []
+    node = summary.nodes[node_id]
     for name in col_names:
-      is_total_processing_time_zero = (
-          summary.nodes[node_id].total_processing_time_ns == 0
-      )
+      is_total_processing_time_zero = node.total_processing_time_ns == 0
       if name == _AVG_PROCESSING_TIME_COLUMN_NAME:
         value = _get_avg_processing_time_ns(summary, node_id)
       else:
         value = getattr(summary.nodes[node_id], name)
 
-      if name in (
+      if name == "wait_time_ratio":
+        if node.is_prefetch:
+          # The iterator wait time of the prefetch node is distributed across
+          # its child nodes.
+          col_value = "N/A"
+        else:
+          col_value = _format_ratio_as_percent(value)
+
+      elif name in (
           "min_processing_time_ns",
           "max_processing_time_ns",
           "total_processing_time_ns",
@@ -168,25 +264,6 @@ def _pretty_format_summary(
     tabular_summary.append(row_values)
   table = _Table(tabular_summary, col_widths=col_widths)
   return table.get_pretty_wrapped_summary()  # pylint: disable=protected-access
-
-
-@enum.unique
-class ExecutionTrackingMode(enum.Flag):
-  """Represents different modes for tracking execution statistics.
-
-  Available modes:
-    DISABLED:
-      No execution statistics are measured. This mode is the default.
-    STAGE_TIMING:
-      The time taken for each transformation stage to execute is measured and
-      recorded. This recorded time reflects the duration spent within the
-      specific transformation to return an element, excluding the time spent in
-      any parent transformations. The recorded time can be retrieved using
-      `grain.experimental.get_execution_summary` method.
-  """
-
-  DISABLED = enum.auto()
-  STAGE_TIMING = enum.auto()
 
 
 class _Table:
@@ -292,6 +369,8 @@ class StatsConfig:
   # Whether this transformation mutates the element spec. This is used to
   # determine element spec of the current transformation.
   transform_mutates_spec: bool = True
+  # Whether this transformation is a prefetch transformation.
+  is_prefetch: bool = False
   # Whether to log the execution summary.
   log_summary: bool = False
 
@@ -430,6 +509,11 @@ class Stats(abc.ABC):
     )
 
 
+def _running_in_colab() -> bool:
+  """Returns whether the current process is running in Colab."""
+  return "google.colab" in sys.modules
+
+
 class _NoopStats(Stats):
   """Default implementation for statistics collection that does nothing."""
 
@@ -473,7 +557,10 @@ class _VisualizationStats(Stats):
     return element
 
   def report(self):
-    logging.info("Grain Dataset graph:\n\n%s", self._visualize_dataset_graph())
+    msg = f"Grain Dataset graph:\n\n{self._visualize_dataset_graph()}"
+    logging.info(msg)
+    if _running_in_colab():
+      print(msg)
 
 
 class _ExecutionStats(_VisualizationStats):
@@ -526,15 +613,17 @@ class _ExecutionStats(_VisualizationStats):
       if self._last_update_time > self._last_report_time:
         self._last_report_time = time.time()
         summary = self._get_execution_summary()
-        logging.info(
+        msg = (
             "Grain Dataset Execution Summary:\n\nNOTE: Before analyzing the"
             " `MapDataset` nodes, ensure that the `total_processing_time` of"
             " the `PrefetchDatasetIterator` node indicates it is a bottleneck."
             " The `MapDataset` nodes are executed in multiple threads and thus,"
             " should not be compared to the `total_processing_time` of"
-            " `DatasetIterator` nodes.."
+            f" `DatasetIterator` nodes.\n\n{_pretty_format_summary(summary)}"
         )
-        logging.info(_pretty_format_summary(summary))
+        logging.info(msg)
+        if _running_in_colab():
+          print(msg)
 
   def _build_execution_summary(
       self,
@@ -548,6 +637,7 @@ class _ExecutionStats(_VisualizationStats):
     self._summary.name = self._config.name
     self._summary.output_spec = str(self.output_spec)
     self._summary.is_output = self._is_output
+    self._summary.is_prefetch = self._config.is_prefetch
     execution_summary.nodes.get_or_create(node_id)
     execution_summary.nodes[node_id].CopyFrom(self._summary)
     current_node_id = node_id
@@ -563,6 +653,7 @@ class _ExecutionStats(_VisualizationStats):
     """Returns ExecutionStats Summary for the dataset pipeline."""
     execution_summary = execution_summary_pb2.ExecutionSummary()
     result, _ = self._build_execution_summary(execution_summary, 0)
+    _populate_wait_time_ratio(result)
     return result
 
   @contextlib.contextmanager
@@ -616,7 +707,9 @@ class _ExecutionStats(_VisualizationStats):
 def make_stats(
     config: StatsConfig,
     parents: Sequence[Stats],
-    execution_tracking_mode: ExecutionTrackingMode = ExecutionTrackingMode.DISABLED,
+    execution_tracking_mode: base.ExecutionTrackingMode = (
+        base.ExecutionTrackingMode.DISABLED
+    ),
 ) -> Stats:
   """Produces statistics instance according to the current execution mode."""
   return _NoopStats(config, parents=parents)

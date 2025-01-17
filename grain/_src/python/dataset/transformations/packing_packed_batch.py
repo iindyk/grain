@@ -1,3 +1,16 @@
+# Copyright 2025 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 """This module provides a helper class for multi-bin first-fit packing.
 
 Example packing is a step in many input pipelines for sequence to sequence
@@ -20,17 +33,16 @@ import copy
 import dataclasses
 from typing import Generic, TypeVar
 
-import jax
+from grain._src.core import tree
 import jaxtyping as jt
 import numpy as np
-import tree
 
 
 _T = TypeVar("_T")
 
 
 @dataclasses.dataclass(frozen=True, kw_only=True)
-class _SuccessfulRowOrFailingComponents:
+class SuccessfulRowOrFailingComponents:
   # Holds the index of the row to put a new element into if it can fit,
   # or None if it can't fit into any row.
   row: int | None
@@ -110,19 +122,19 @@ class PackedBatch(Generic[_T]):
           dtype=dtype,
       )
 
-    self._values = jax.tree.map(
+    self._values = tree.map_structure(
         make_packed_buffer, length_struct, element_for_shapes
     )
 
     def make_packed_aux_info(length: int):
       return zeros(shape=(num_packing_bins, length), dtype=np.int32)
 
-    self._segment_ids = jax.tree.map(make_packed_aux_info, length_struct)
-    self._positions = jax.tree.map(make_packed_aux_info, length_struct)
+    self._segment_ids = tree.map_structure(make_packed_aux_info, length_struct)
+    self._positions = tree.map_structure(make_packed_aux_info, length_struct)
 
     # Tracks the next empty position to insert an example for each row
     # in the batch, for each feature in features_to_pack.
-    self._first_free_cell_per_row = jax.tree.map(
+    self._first_free_cell_per_row = tree.map_structure(
         lambda _: zeros(num_packing_bins, dtype=np.int64), length_struct
     )
 
@@ -131,14 +143,17 @@ class PackedBatch(Generic[_T]):
     self._num_examples_per_row = [0 for _ in range(num_packing_bins)]
 
   def get_packed_batch(self):
+    """Returns the current packed batch."""
     rows_with_values = sum(x > 0 for x in self._num_examples_per_row)
     if rows_with_values < len(self._num_examples_per_row):
       # Partial batch, last rows don't have values.
-      self._values = jax.tree.map(lambda x: x[:rows_with_values], self._values)
-      self._segment_ids = jax.tree.map(
+      self._values = tree.map_structure(
+          lambda x: x[:rows_with_values], self._values
+      )
+      self._segment_ids = tree.map_structure(
           lambda x: x[:rows_with_values], self._segment_ids
       )
-      self._positions = jax.tree.map(
+      self._positions = tree.map_structure(
           lambda x: x[:rows_with_values], self._positions
       )
     return _extract_and_rekey_packed_batch(
@@ -148,30 +163,32 @@ class PackedBatch(Generic[_T]):
         meta_features=self._meta_features,
     )
 
-  def _can_add_at_row(
-      self, element: jt.PyTree[np.ndarray]
-  ) -> _SuccessfulRowOrFailingComponents:
+  @classmethod
+  def can_add_at_row(
+      cls,
+      element_feature_lengths: jt.PyTree[int],
+      num_packing_bins: int,
+      length_struct: jt.PyTree[int],
+      first_free_cell_per_row: jt.PyTree[int],
+  ) -> SuccessfulRowOrFailingComponents:
     """Checks whether the element can be added in any of the rows.
 
     Args:
-      element: The element we are trying to fit into a row in the batch.
+      element_feature_lengths: The lengths of each feature in the element.
+      num_packing_bins: The number of packing bins.
+      length_struct: The max length of each feature.
+      first_free_cell_per_row: The first free cell per row.
 
     Returns:
       SuccessfulRowOrFailingComponents: If the element fits into a row,
         return the index of that row. If it doesn't fit in any of the rows,
         return the names of the components that caused it to fail to fit.
     """
-    tree.assert_same_structure(element, self._length_struct)
-
-    element_feature_lengths = jax.tree.map(
-        lambda x: 1 if np.ndim(x) == 0 else len(x), element
-    )
-
     # Check no feature exceeds max length
     features_exceeding_max_length = []
     for (path, feature_length), (_, max_length) in zip(
         tree.flatten_with_path(element_feature_lengths),
-        tree.flatten_with_path(self._length_struct),
+        tree.flatten_with_path(length_struct),
         strict=True,
     ):
       if feature_length > max_length:
@@ -179,9 +196,9 @@ class PackedBatch(Generic[_T]):
 
     if features_exceeding_max_length:
       raise ValueError(
-          f"Inputs to {self.__class__.__name__} must be truncated to max"
-          " length. Received the following features that exceed their max: "
-          "(feature_path, feature_length, max_length) = "
+          f"Inputs to {cls.__name__} must be truncated to max length. Received "
+          "the following features that exceed their max: (feature_path, "
+          "feature_length, max_length) = "
           f"{features_exceeding_max_length}"
       )
 
@@ -191,19 +208,19 @@ class PackedBatch(Generic[_T]):
       return feature_length + first_free_cell <= max_length
 
     is_row_free_struct = tree.flatten_with_path(
-        jax.tree.map(
+        tree.map_structure(
             _feature_will_fit,
             element_feature_lengths,
-            self._first_free_cell_per_row,
-            self._length_struct,
+            first_free_cell_per_row,
+            length_struct,
         )
     )
 
     # Pick first row (if exists) where element can be added.
-    for i in range(self._num_packing_bins):  # For each row.
+    for i in range(num_packing_bins):  # For each row.
       if all(free[i] for _, free in is_row_free_struct):
         # All components are free at that row.
-        return _SuccessfulRowOrFailingComponents(row=i, failing_components=None)
+        return SuccessfulRowOrFailingComponents(row=i, failing_components=None)
 
     # There is no guarantee we have a single failing component, since one
     # component could be the reason an element could not fit in one row
@@ -222,7 +239,7 @@ class PackedBatch(Generic[_T]):
         reverse=True,
     )
     failing_components = [e[0] for e in sorted_failing_components if e[1] > 0]
-    return _SuccessfulRowOrFailingComponents(
+    return SuccessfulRowOrFailingComponents(
         row=None, failing_components=failing_components
     )
 
@@ -264,7 +281,18 @@ class PackedBatch(Generic[_T]):
       could not be added, returns a list of strings indicating the components
       that failed.
     """
-    successful_row_or_failing_component = self._can_add_at_row(element)
+    tree.assert_same_structure(element, self._length_struct)
+
+    element_feature_lengths = tree.map_structure(
+        lambda x: 1 if np.ndim(x) == 0 else len(x), element
+    )
+
+    successful_row_or_failing_component = self.can_add_at_row(
+        element_feature_lengths,
+        self._num_packing_bins,
+        self._length_struct,
+        self._first_free_cell_per_row,
+    )
     successful_row = successful_row_or_failing_component.row
     failing_components = successful_row_or_failing_component.failing_components
     if successful_row is None:

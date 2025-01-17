@@ -20,6 +20,7 @@ from collections.abc import Callable, Iterator
 import contextlib
 import copy
 import functools
+import math
 import queue
 import sys
 import threading
@@ -34,6 +35,7 @@ import multiprocessing as mp
 from grain._src.python import grain_pool
 from grain._src.python import options as grain_options
 from grain._src.python import shared_memory_array
+from grain._src.python.dataset import base
 from grain._src.python.dataset import dataset
 from grain._src.python.dataset import stats as dataset_stats
 from grain._src.python.dataset.transformations import filter as filter_dataset
@@ -108,7 +110,7 @@ class PrefetchDatasetIterator(dataset.DatasetIterator[T]):
 
   @functools.cached_property
   def _stats(self):
-    execution_tracking_mode = self._options_with_default.execution_tracking_mode
+    execution_tracking_mode = self._ctx.dataset_options.execution_tracking_mode
     parent_stats = self._map_parent._initialize_stats(  # pylint: disable=protected-access
         execution_tracking_mode
     )
@@ -117,6 +119,7 @@ class PrefetchDatasetIterator(dataset.DatasetIterator[T]):
         dataset_stats.StatsConfig(
             name=str(self),
             transform_mutates_spec=self._MUTATES_ELEMENT_SPEC,
+            is_prefetch=True,
         ),
         (parent_stats,),
         execution_tracking_mode,
@@ -128,14 +131,16 @@ class PrefetchDatasetIterator(dataset.DatasetIterator[T]):
     # here. The validator helps to detect if we discard too many elements.
     return filter_dataset.FilterThresholdChecker(
         transform_name=str(self),
-        warn_threshold=self._options_with_default.filter_warn_threshold_ratio,
-        raise_threshold=self._options_with_default.filter_raise_threshold_ratio,
+        warn_threshold=self._ctx.dataset_options.filter_warn_threshold_ratio,
+        raise_threshold=self._ctx.dataset_options.filter_raise_threshold_ratio,
     )
 
   def __next__(self) -> T:
+    # The time recorded here is the time spent in prefetch node to return an
+    # element, including the time spent in parent node.
+    timer = dataset_stats.Timer()
     # We loop here to skip all None elements (in case the underlying dataset
     # is sparse), if self._allow_nones = False, else we return Nones too.
-    timer = dataset_stats.Timer()
     while True:
       if self._next_index == self._dataset_length:
         break
@@ -274,6 +279,7 @@ def _copy_leaf_to_shm(leaf: Any) -> Any:
       not isinstance(leaf, np.ndarray)
       or leaf.dtype.hasobject
       or not leaf.flags.c_contiguous
+      or math.prod(leaf.shape) == 0
   ):
     return leaf
 
@@ -374,12 +380,16 @@ class GetElementProducerFn(grain_pool.GetElementProducerFn, Generic[T]):
   def __call__(
       self, *, worker_index: int, worker_count: int
   ) -> Iterator[tuple[T, Optional[dict[str, Any]]]]:
-    # Recover from the last recorded state for the given worker.
-    worker_state = self._state[_WORKERS_STATE][str(worker_index)]
     if worker_count > 1:
       _set_slice(self._ds, slice(worker_index, None, worker_count))
-    it = iter(self._ds)
-    it.set_state(worker_state)  # pytype: disable=attribute-error
+    it = self._ds.__iter__()
+    it._ctx.mp_context = base.MultiprocessingContext(
+        process_index=worker_index, process_count=worker_count
+    )
+    # Recover from the last recorded state for the given worker.
+    worker_state = self._state[_WORKERS_STATE][str(worker_index)]
+    if worker_state is not None:
+      it.set_state(worker_state)
     # Skip the required number of iterations after the last recorded state.
     for _ in range(self._state[_ITERATIONS_TO_SKIP][str(worker_index)]):
       _ = next(it)
@@ -432,19 +442,33 @@ class MultiprocessPrefetchDatasetIterator(dataset.DatasetIterator[T]):
     # Create initial state. We record state of each worker periodically together
     # with the number of iterations without the recorded state and index of the
     # last worker.
-    workers_state: dict[str, Any] = {}
-    iterations_to_skip: dict[str, int] = {}
-    for i in range(multiprocessing_options.num_workers):
-      workers_state[str(i)] = iter(
-          self._iter_parent
-      ).get_state()  # pytype: disable=attribute-error
-      iterations_to_skip[str(i)] = 0
+    iterations_to_skip: dict[str, int] = {
+        str(i): 0 for i in range(multiprocessing_options.num_workers)
+    }
+    workers_state: dict[str, Any] = {
+        str(i): None for i in range(multiprocessing_options.num_workers)
+    }
 
     self._state: dict[str, dict[str, Any] | int] = {
         _WORKERS_STATE: workers_state,
         _ITERATIONS_TO_SKIP: iterations_to_skip,
         _LAST_WORKER_INDEX: -1,
     }
+
+  @functools.cached_property
+  def _stats(self):
+    config = dataset_stats.StatsConfig(
+        name=str(self),
+        transform_mutates_spec=self._MUTATES_ELEMENT_SPEC,
+        is_prefetch=True,
+    )
+    return dataset_stats.make_stats(
+        config,
+        [],
+        execution_tracking_mode=(
+            self._ctx.dataset_options.execution_tracking_mode
+        ),
+    )
 
   def __iter__(self) -> dataset.DatasetIterator[T]:
     return self
@@ -483,7 +507,16 @@ class MultiprocessPrefetchDatasetIterator(dataset.DatasetIterator[T]):
     self._iterator = None
 
   def get_state(self) -> dict[str, Any]:
-    return copy.deepcopy(self._state)
+    result = copy.deepcopy(self._state)
+    workers_state: dict[str, Any] = result[_WORKERS_STATE]  # pytype: disable=annotation-type-mismatch
+    parent_state = None
+    for worker_index, worker_state in workers_state.items():
+      # Create initial state from the parent iterator. This is to make sure the
+      # spec of the produced iterator does not change.
+      if worker_state is None:
+        parent_state = parent_state or self._iter_parent.__iter__().get_state()
+        workers_state[worker_index] = copy.deepcopy(parent_state)
+    return result
 
   def _ensure_iterator_initialized(self) -> None:
     if self._iterator is None:

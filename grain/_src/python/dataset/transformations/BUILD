@@ -33,6 +33,7 @@ py_test(
     deps = [
         "//grain/_src/core:transforms",
         "//grain/_src/python/dataset",
+        "//grain/_src/python/dataset:base",
     ],
 )
 
@@ -45,6 +46,7 @@ py_test(
         "//grain/_src/core:transforms",
         "//grain/_src/python:options",
         "//grain/_src/python/dataset",
+        "//grain/_src/python/dataset:base",
     ],
 )
 
@@ -123,6 +125,7 @@ py_library(
     srcs = ["packing_packed_batch.py"],
     srcs_version = "PY3",
     deps = [
+        "//grain/_src/core:tree",
     ],
 )
 
