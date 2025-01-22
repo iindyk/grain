@@ -33,7 +33,7 @@ from typing import Any, Generic, Optional, Protocol, SupportsIndex, TypeVar, Uni
 
 from absl import logging
 import array_record.python.array_record_data_source as array_record
-import array_record.python.array_record_module
+#import array_record.python.array_record_module
 import seqio
 from etils import epath
 from grain._src.core import monitoring as grain_monitoring
