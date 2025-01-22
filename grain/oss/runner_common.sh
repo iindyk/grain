@@ -54,6 +54,7 @@ install_grain_deps() {
   "$PYTHON_BIN" -m pip install -U --find-links="$AR_DIR" array_record --no-cache-dir;
   "$PYTHON_BIN" -m pip install -U \
     absl-py \
+    seqio \
     build \
     cloudpickle \
     dm-tree \
