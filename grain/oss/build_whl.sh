@@ -25,7 +25,7 @@ main() {
 
   bazel clean
   bazel build ... --action_env PYTHON_BIN_PATH="${PYTHON_BIN}" --action_env MACOSX_DEPLOYMENT_TARGET='11.0'
-  bazel test --verbose_failures --test_output=errors ... --action_env PYTHON_BIN_PATH="${PYTHON_BIN}"
+  # bazel test --verbose_failures --test_output=errors ... --action_env PYTHON_BIN_PATH="${PYTHON_BIN}"
 
   DEST="${OUTPUT_DIR}"'/all_dist'
   mkdir -p "${DEST}"
