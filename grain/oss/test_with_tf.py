@@ -20,7 +20,7 @@
 #import gc
 #gc.disable()
 
-#from grain import python as grain
+from grain import python as grain
 
 import jax
 import tensorflow as tf
