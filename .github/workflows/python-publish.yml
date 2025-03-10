@@ -35,5 +35,5 @@ jobs:
           export SOURCE_DIR="/tmp/grain"
           . "${SOURCE_DIR}"'/grain/oss/runner_common.sh'
           install_and_init_pyenv
-          $PYTHON_BIN -m pip install tensorflow==2.17.0 grain
-          $PYTHON_BIN -m trace --trace --ignore-dir "${SOURCE_DIR}"'/grain/oss/test_with_tf.py'
+          $PYTHON_BIN -m pip install tensorflow grain hanging_threads
+          $PYTHON_BIN -m "${SOURCE_DIR}"'/grain/oss/test_with_tf.py'
