@@ -16,9 +16,8 @@
 # print("base64", flush=True)
 # import re
 # print("re", flush=True)
-from etils import epy
-with epy.lazy_imports():
-  from grain import python as grain
+
+from grain import python as grain
 
 import tensorflow as tf
 # print("tf", flush=True)
