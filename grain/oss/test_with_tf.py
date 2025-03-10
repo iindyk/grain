@@ -16,10 +16,8 @@
 # print("base64", flush=True)
 # import re
 # print("re", flush=True)
-
+from grain import python as grain
+print("iindy: grain", flush=True)
 import tensorflow as tf
 # print("tf", flush=True)
-from grain import python as grain
-print("grain", flush=True)
 print(f"iindyk: Done {grain.MapDataset}", flush=True)
-del tf
