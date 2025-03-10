@@ -29,12 +29,11 @@ jobs:
           export PYTHON_VERSION=${{ matrix.python-version }}
           export PYTHON_MAJOR_VERSION=$(echo $PYTHON_VERSION | cut -d. -f1)
           export PYTHON_MINOR_VERSION=$(echo $PYTHON_VERSION | cut -d. -f2)
+          export PYENV_PYTHON_VERSION="3.11"
           export BAZEL_VERSION="7.1.1"
           export OUTPUT_DIR="/tmp/grain"
           export SOURCE_DIR="/tmp/grain"
           . "${SOURCE_DIR}"'/grain/oss/runner_common.sh'
           install_and_init_pyenv
-          pyenv virtualenv 3.11 grain_test
-          pyenv activate grain_test
-          pip install tensorflow grain
-          python -c "import tensorflow as tf ; from grain import python as grain"
+          $PYTHON_BIN pip install tensorflow grain
+          $PYTHON_BIN -c "import tensorflow as tf ; from grain import python as grain"
