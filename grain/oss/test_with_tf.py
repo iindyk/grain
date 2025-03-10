@@ -22,7 +22,6 @@
 
 from grain import python as grain
 
-import jax
 import tensorflow as tf
 # print("tf", flush=True)
 print(f"iindyk: Done {tf.Tensor}", flush=True)
