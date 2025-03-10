@@ -16,6 +16,8 @@
 # print("base64", flush=True)
 # import re
 # print("re", flush=True)
+from multiprocessing import freeze_support
+freeze_support()
 from grain import python as grain
 print("iindy: grain", flush=True)
 import tensorflow as tf
