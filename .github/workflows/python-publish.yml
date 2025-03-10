@@ -36,4 +36,4 @@ jobs:
           . "${SOURCE_DIR}"'/grain/oss/runner_common.sh'
           install_and_init_pyenv
           $PYTHON_BIN -m pip install tensorflow grain hanging_threads jax protobuf~=4.25
-          $PYTHON_BIN -m trace --listfuncs "${SOURCE_DIR}"'/grain/oss/test_with_tf.py'
+          $PYTHON_BIN -m trace --trace --missing "${SOURCE_DIR}"'/grain/oss/test_with_tf.py'
