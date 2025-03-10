@@ -17,6 +17,9 @@
 # import re
 # print("re", flush=True)
 
+import gc
+gc.disable()
+
 from grain import python as grain
 
 import tensorflow as tf
