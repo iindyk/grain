@@ -1,5 +1,6 @@
 import abc
 import typing
+import base64
 
 import tensorflow as tf
 from grain import python as grain
