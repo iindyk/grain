@@ -16,10 +16,10 @@
 # print("base64", flush=True)
 # import re
 # print("re", flush=True)
-from grain import python as grain
-from multiprocessing import freeze_support
-freeze_support()
-print("iindy: grain", flush=True)
+from etils import epy
+with epy.lazy_imports():
+  from grain import python as grain
+
 import tensorflow as tf
 # print("tf", flush=True)
 print(f"iindyk: Done {grain.MapDataset}", flush=True)
