@@ -22,3 +22,4 @@ import tensorflow as tf
 from grain import python as grain
 print("grain", flush=True)
 print(f"iindyk: Done {grain.MapDataset}", flush=True)
+del tf
