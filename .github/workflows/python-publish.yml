@@ -37,4 +37,4 @@ jobs:
           install_and_init_pyenv
           export PYTHONVERBOSE=2
           $PYTHON_BIN -m pip install tensorflow grain jax etils[epy]
-          $PYTHON_BIN -m "${SOURCE_DIR}"'/grain/oss/test_with_tf.py'
+          $PYTHON_BIN "${SOURCE_DIR}"'/grain/oss/test_with_tf.py'
