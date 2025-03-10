@@ -17,11 +17,12 @@
 # import re
 # print("re", flush=True)
 
-import gc
-gc.disable()
+#import gc
+#gc.disable()
 
-from grain import python as grain
+#from grain import python as grain
 
+import jax
 import tensorflow as tf
 # print("tf", flush=True)
-print(f"iindyk: Done {grain.MapDataset}", flush=True)
+print(f"iindyk: Done {tf.Tensor}", flush=True)
