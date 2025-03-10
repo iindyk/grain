@@ -35,5 +35,5 @@ jobs:
           export SOURCE_DIR="/tmp/grain"
           . "${SOURCE_DIR}"'/grain/oss/runner_common.sh'
           install_and_init_pyenv
-          $PYTHON_BIN -m pip install tensorflow grain hanging_threads
+          $PYTHON_BIN -m pip install tensorflow grain hanging_threads jax
           $PYTHON_BIN "${SOURCE_DIR}"'/grain/oss/test_with_tf.py'
