@@ -35,5 +35,5 @@ jobs:
           export SOURCE_DIR="/tmp/grain"
           . "${SOURCE_DIR}"'/grain/oss/runner_common.sh'
           install_and_init_pyenv
-          $PYTHON_BIN -m pip install tensorflow grain hanging_threads jax protobuf~=5.26
+          $PYTHON_BIN -m pip install tensorflow grain hanging_threads jax etils[epy]
           $PYTHON_BIN -m trace --trace --missing "${SOURCE_DIR}"'/grain/oss/test_with_tf.py'
