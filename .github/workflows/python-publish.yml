@@ -35,5 +35,5 @@ jobs:
           export SOURCE_DIR="/tmp/grain"
           . "${SOURCE_DIR}"'/grain/oss/runner_common.sh'
           install_and_init_pyenv
-          $PYTHON_BIN -m pip install tensorflow grain
+          $PYTHON_BIN -m pip install tensorflow grain==0.2.5
           $PYTHON_BIN -c "import tensorflow as tf ; from grain import python as grain"
