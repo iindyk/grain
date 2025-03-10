@@ -18,8 +18,22 @@ jobs:
         os: [macos-latest]
 
     steps:
+      - uses: "actions/checkout@v3"
+      - name: Create directory
+        run: |
+          mkdir -p /tmp/grain
+          cp -r . /tmp/grain
       - name: test with TF
         run: |
           set -xe
-          python3 -m pip install tensorflow==2.17.0 grain
-          python3 -c -m trace --trace "import tensorflow as tf ; from grain import python as grain"
+          export PYTHON_VERSION=${{ matrix.python-version }}
+          export PYTHON_MAJOR_VERSION=$(echo $PYTHON_VERSION | cut -d. -f1)
+          export PYTHON_MINOR_VERSION=$(echo $PYTHON_VERSION | cut -d. -f2)
+          export PYENV_PYTHON_VERSION="3.11"
+          export BAZEL_VERSION="7.1.1"
+          export OUTPUT_DIR="/tmp/grain"
+          export SOURCE_DIR="/tmp/grain"
+          . "${SOURCE_DIR}"'/grain/oss/runner_common.sh'
+          install_and_init_pyenv
+          $PYTHON_BIN -m pip install tensorflow==2.17.0 grain
+          $PYTHON_BIN -c "import tensorflow as tf ; from grain import python as grain"
