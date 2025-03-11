@@ -35,6 +35,6 @@ jobs:
           export SOURCE_DIR="/tmp/grain"
           . "${SOURCE_DIR}"'/grain/oss/runner_common.sh'
           install_and_init_pyenv
-          $PYTHON_BIN -m pip install tensorflow[and-cuda] grain jax
+          $PYTHON_BIN -m pip install tensorflow array-record
           export PYTHONVERBOSE=2
           $PYTHON_BIN "${SOURCE_DIR}"'/grain/oss/test_with_tf.py'
