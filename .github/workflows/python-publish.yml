@@ -37,4 +37,5 @@ jobs:
           install_and_init_pyenv
           $PYTHON_BIN -m pip install tensorflow array-record
           export PYTHONVERBOSE=2
+          export PYTHON_FROZEN_MODULES=off
           $PYTHON_BIN "${SOURCE_DIR}"'/grain/oss/test_with_tf.py'
