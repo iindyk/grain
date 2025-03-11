@@ -36,6 +36,4 @@ jobs:
           . "${SOURCE_DIR}"'/grain/oss/runner_common.sh'
           install_and_init_pyenv
           $PYTHON_BIN -m pip install tensorflow array-record==0.7.0
-          export PYTHONVERBOSE=2
-          export PYTHON_FROZEN_MODULES=off
           $PYTHON_BIN "${SOURCE_DIR}"'/grain/oss/test_with_tf.py'
