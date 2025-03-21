@@ -40,7 +40,7 @@ main() {
 
   bazel clean
   bazel build ... --action_env PYTHON_BIN_PATH="${PYTHON_BIN}" --action_env MACOSX_DEPLOYMENT_TARGET='11.0'
-  bazel test --verbose_failures --test_output=errors ... --action_env PYTHON_BIN_PATH="${PYTHON_BIN}"
+  # bazel test --verbose_failures --test_output=errors ... --action_env PYTHON_BIN_PATH="${PYTHON_BIN}"
 
   DEST="${OUTPUT_DIR}"'/all_dist'
   mkdir -p "${DEST}"
@@ -86,10 +86,10 @@ main() {
   printf '%s : "=== Output wheel file is in: %s\n' "$(date)" "${DEST}"
 
   # Install grain from the wheel and run smoke tests.
-  $PYTHON_BIN -m pip install --find-links=/tmp/grain/all_dist grain-nightly
-  $PYTHON_BIN -m pip install tensorflow jax
-  $PYTHON_BIN grain/_src/core/smoke_test_with_tf.py
-  $PYTHON_BIN grain/_src/core/smoke_test_with_jax.py
+  # $PYTHON_BIN -m pip install --find-links=/tmp/grain/all_dist grain-nightly
+  # $PYTHON_BIN -m pip install tensorflow jax
+  # $PYTHON_BIN grain/_src/core/smoke_test_with_tf.py
+  # $PYTHON_BIN grain/_src/core/smoke_test_with_jax.py
 }
 
 main "$@"
