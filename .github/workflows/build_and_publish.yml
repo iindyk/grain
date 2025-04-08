@@ -6,6 +6,12 @@ name: Build & Publish
 
 on:
   workflow_dispatch:
+    inputs:
+      skip_tests:
+        description: 'Whether to skip unit tests when building the package'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -36,6 +42,9 @@ jobs:
           export BAZEL_VERSION="7.1.1"
           export OUTPUT_DIR="/tmp/grain"
           export SOURCE_DIR="/tmp/grain"
+          if [ ${{ inputs.skip_tests }} = true ] ; then
+            export SKIP_TESTS="1"
+          fi
           . "${SOURCE_DIR}"'/grain/oss/runner_common.sh'
           build_and_test_grain
       - name: Upload Grain artifacts
