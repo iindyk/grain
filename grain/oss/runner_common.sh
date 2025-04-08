@@ -37,7 +37,7 @@ build_and_test_grain_linux() {
       --env PYTHON_MINOR_VERSION="${PYTHON_MINOR_VERSION}" \
       --env BAZEL_VERSION="${BAZEL_VERSION}" \
       --env AUDITWHEEL_PLATFORM="${AUDITWHEEL_PLATFORM}" \
-      --env SKIP_TESTS="${SKIP_TESTS}" \
+      --env RUN_TESTS="${RUN_TESTS}" \
       -v "${SOURCE_DIR}":"${OUTPUT_DIR}" \
       --name grain grain:"${PYTHON_VERSION}" \
       sh grain/oss/build_whl.sh
